@@ -1,3 +1,4 @@
+import argparse
 from os import path
 from os import walk
 from datetime import timedelta
@@ -6,30 +7,6 @@ from types import SimpleNamespace
 from moviepy.editor import VideoFileClip
 from moviepy.editor import *
 
-matches = ['fuck']
-
-def stitch(clips_dir, name):
-
-    # find subtitles
-    list_files = []
-    for (dirpath, dirnames, filenames) in walk(clips_dir):
-        for filename in filenames:
-            if filename.endswith('.mp4') and not filename.startswith('._'):
-                list_files.append(dirpath + '/' + filename)
-    list_files.sort()
-
-    clips = []
-    for filename in list_files:
-        clips.append(VideoFileClip(filename))
-
-    # fade_duration = 1 # 1-second fade-in for each clip
-    # clips = [clip.crossfadein(fade_duration) for clip in clips]
-
-    final_clip = concatenate_videoclips(clips)
-
-    # You can write any format, in any quality.
-    final_clip.write_videofile("./"+name+".mp4", codec="libx264", temp_audiofile='temp-audio.m4a', remove_temp=True, audio_codec='aac')
-
 
 def timestamp_to_sec(timestamp):
     timestamp = timestamp.replace(',','.')
@@ -37,57 +14,71 @@ def timestamp_to_sec(timestamp):
     return timedelta(hours=h, minutes=m, seconds=s).total_seconds()
 
 
-def main():
+def main(matches):
 
     mypath = './'
 
     # find subtitles
+    print('\n=> Scanning folder for subtitle files...');
     srt_files = []
     for (dirpath, dirnames, filenames) in walk(mypath):
         for filename in filenames:
             if filename.endswith('.srt') and not filename.startswith('._'):
                 srt_files.append(dirpath + '/' + filename)
     srt_files.sort()
+    print("  Subtitles found: {} files.".format(len(srt_files)))
 
-    print("Found {} files".format(len(srt_files)))
-
-    count = 0
-    quotes = []
 
     # read each subtitle
+    print('\n=> Searching subtitles matching {} ...'.format(matches))
+    quotes = []
     for srt_file in srt_files:
         basename = path.splitext(path.basename(srt_file))[0]
-        for (index, timestamp, caption) in parse_subtitles(srt_file, matches):
-            count += 1
-            print(count, index, basename, timestamp, caption)
+        print('\t* ', basename)
+        for matched_caption in parse_subtitles(srt_file, matches):
+            print('\t\t{} - [{} {} ~ {}] {}'.format(len(quotes), matched_caption.index, matched_caption.t_start, matched_caption.t_end, ' | '.join(matched_caption.captions)))
 
             quotes.append(SimpleNamespace(
-                index=index,
-                count=count,
+                count=len(quotes),
+                index=matched_caption.index,
+                t_start=matched_caption.t_start,
+                t_end=matched_caption.t_end,
+                captions=matched_caption.captions,
                 basename=basename,
-                t_start=timestamp[0],
-                t_end=timestamp[1],
-                caption=caption,
                 source= srt_file.replace('.srt', ".mkv")
             ))
+        print('\t')
+    print('  Done scanning subtitles! Quotes found: {}'.format(len(quotes)))
 
-   # trim clips
+
+    # trim clips
+    print('\n=> Creating subclips...')
+    clips = []
     for i, quote in enumerate(quotes):
-        print("[{}/{}] Extracting clip... {}".format(i, len(quotes), " ".join(quote.caption)))
+        print("\t[{}/{}] Clipping... {}".format(i, len(quotes), " | ".join(quote.captions)))
         
         outputfile = './clips/{} [{}] {}.mp4'.format(quote.count, quote.index, quote.basename)
         if path.exists(outputfile):
-            print("Already Exist, skipping...")
+            print("\tAlready Exist, skipping...")
             continue
         clip = VideoFileClip(quote.source).subclip(timestamp_to_sec(quote.t_start), timestamp_to_sec(quote.t_end))
-        clip.to_videofile(outputfile, codec="libx264", temp_audiofile='temp-audio.m4a', remove_temp=True, audio_codec='aac')
-    
-    print('Done')
+        # clip.to_videofile(outputfile, codec="libx264", temp_audiofile='temp-audio.m4a', remove_temp=True, audio_codec='aac')
+        clips.append(clip)
+    print('  Done creating subclips!')
 
-    print('Stitching clips together...')
-    outputname = ' '.join(matches)
-    stitch('./clips', outputname)
 
+    # join clips into a video
+    print('\n=> Stitching {} clips together...'.format(len(clips)))
+    outputname = ', '.join(matches)
+
+    # fade_duration = 1 # 1-second fade-in for each clip
+    # clips = [clip.crossfadein(fade_duration) for clip in clips]
+
+    final_clip = concatenate_videoclips(clips)
+    final_clip.write_videofile("./"+outputname+".mp4", codec="libx264", temp_audiofile='temp-audio.m4a', remove_temp=True, audio_codec='aac')
+
+
+    print('\nFinished!')
            
 
 def parse_subtitles(filename, matches):
@@ -124,11 +115,10 @@ def parse_subtitles(filename, matches):
                         break
 
                 # print(index, timestamps, captions)
-
                 sanitized_captions = ' '.join(captions).lower().encode("ascii", "ignore").decode()
 
                 if any(x in sanitized_captions for x in matches):
-                    yield (index, timestamps, captions)
+                    yield SimpleNamespace(index=index, t_start=timestamps[0], t_end=timestamps[1], captions=captions)
                 
             elif not line:
                 # End of file
@@ -140,4 +130,11 @@ def parse_subtitles(filename, matches):
                 print('ERROR Reading line ({}:{})  "{}"'.format(filename, line_no, line))
                 # raise NameError("Unexpected line content! ")
 
-main()
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--match", "-m", nargs='+', required=True, help="Define matches")
+
+# Read arguments from the command line
+args = parser.parse_args()
+
+main(args.match)
