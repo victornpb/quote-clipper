@@ -29,8 +29,9 @@ def main(tokens, directory, output_file, dry_run, offsets, is_regex, case_sensit
     $ quoteclipper -match Hello .
     $ quoteclipper -m "Morning" -m "Good Night" ./videos
     $ quoteclipper -o ~/Desktop/greetings.mp4 -m 'Hello' -m 'Hi' -m 'Whassup' .
-    $ quoteclipper -re -m /Call 555.\d+/i 
-    $ quoteclipper -re -m /Car?s|sandwich(es)?/i .
+    $ quoteclipper -re -m "/Call 555.\d+/i" 
+    $ quoteclipper -re -m "/Car?s|sandwich(es)?/i" .
+    $ quoteclipper -re -m "/(Ya?|You)'? ?Know\!/i"
     """
     print('QuoteClipper')
     
