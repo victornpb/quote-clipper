@@ -3,7 +3,7 @@ from main import main
 
 def test_hello_world():
   runner = CliRunner()
-  result = runner.invoke(main, '-dir "/Volumes/SSD 1TB/Downloads/The Boys" -re --dry-run cunt')
+  result = runner.invoke(main, '-m "Hello" -e -ed ./clips "./videos"')
 
   print(result.exception)
 
