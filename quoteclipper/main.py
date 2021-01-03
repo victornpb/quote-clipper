@@ -33,30 +33,31 @@ def main(matches, directory, outputname, dry_run, offsets, is_regex):
     episodes_list = []
     for (dirpath, _dirnames, filenames) in walk(directory):
         for filename in filenames:
-            if filename.endswith('.srt') and not filename.startswith('._'):
-                srt_file = dirpath + '/' + filename
-                basename = path.splitext(path.basename(srt_file))[0]
-                video_file = None
+            if filename.endswith(('.mp4', '.mkv')) and not filename.startswith('._'):
+                video_path = path.join(dirpath, filename)
+                subtitles_path = None
+                basename = path.splitext(path.basename(video_path))[0]
 
-                # find corresponding video for the subtitle
-                extensions = ['mp4', 'mkv']
-                for ext in extensions:
-                    test = srt_file.replace('.srt','.'+ext)
-                    if path.exists(test):
-                        video_file = test
+                # find corresponding subtitle file
+                for ext in ['srt', 'ssa', 'ass', 'sub', 'txt']:
+                    test = path.join(dirpath, basename + '.' + ext)
+                    if path.isfile(test):
+                        subtitles_path = test
+                        break
                 
-                if video_file:
+                if subtitles_path:
                     episode = SimpleNamespace(
-                        srt=srt_file,
-                        video=video_file,
-                        basename=basename
+                        basename=basename,
+                        video_path=video_path,
+                        subtitles_path=subtitles_path,
                     )
                     episodes_list.append(episode)
+                    print("\t* {}".format(subtitles_path));
                 else:
-                    print("     Found srt subtitle without corresponding video! ({})".format(srt_file))
+                    print("\tNo subtitles found! {}".format(video_path))
 
-    episodes_list = sorted(episodes_list, key=lambda k: k.srt)
-    print("  Files found: {} videos with srt subtitles".format(len(episodes_list)))
+    episodes_list = sorted(episodes_list, key=lambda k: k.basename)
+    print("  Files found: {} videos with subtitles".format(len(episodes_list)))
 
 
     # read each subtitle
