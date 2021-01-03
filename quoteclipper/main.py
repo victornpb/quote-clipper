@@ -13,12 +13,15 @@ from pathvalidate import sanitize_filename
 @click.command()
 @click.argument('directory', type=click.Path(dir_okay=True, exists=True, resolve_path=True), default=".")
 @click.option('--match', '-m', 'tokens', type=str, required=True, multiple=True)
-@click.option('--output', '-o', 'outputname', type=click.Path(file_okay=True, writable=True), help="Name of the output movie. [default: MATCHES.mp4]")
+@click.option('--output', '-o', 'output_file', type=click.Path(file_okay=True, writable=True), default="./Compilation of {}.mp4", show_default=True, help="Name of the output movie.")
+@click.option('--export-clips', '-e', 'export_clips', type=bool, is_flag=True, help="Export individual clips")
+@click.option('--export-clips-dir', '-ed', 'export_clips_dir', type=click.Path(dir_okay=True, exists=True, resolve_path=True), default=".", show_default=True, help="Directory to export clips to (must exist)")
+@click.option('--export-clips-template', '-et', 'export_clips_template', type=str, default='{n} - {quote}.mp4', show_default=True, help="Template to be used as clips filenames.\n(Variables: n, index, basename, quote, start, end, duration)")
 @click.option('--dry-run/--no-dry-run', type=bool, is_flag=True, help="Skip the generation of clips")
 @click.option('--offset', '-t', 'offsets', type=(float, float), metavar='<start> <end>', default=[0.0, 0.0], show_default=True, help="Offset the start and end timestamps.\nFor example --offset -1.5 1.5 will make each clip 3s longer.")
 @click.option('--case-sensitive', '-c', 'case_sensitive', is_flag=True, help="Case sensitive match (ignored by --regex)")
 @click.option('--regex', '-re', 'is_regex', type=bool, is_flag=True, help="Interpret matches as regular expressions. Example '/foo \w+/i' ")
-def main(tokens, directory, outputname, dry_run, offsets, is_regex, case_sensitive):
+def main(tokens, directory, output_file, dry_run, offsets, is_regex, case_sensitive, export_clips, export_clips_dir, export_clips_template):
     """A tool for finding quotes in series/movies/animes and automatically creating compilations.
 
     \b
@@ -30,20 +33,18 @@ def main(tokens, directory, outputname, dry_run, offsets, is_regex, case_sensiti
     $ quoteclipper -re -m /Car?s|sandwich(es)?/i .
     """
     print('QuoteClipper')
-    print('Directory:', directory, 'Matches:', tokens, 'Output:', outputname)
     
     tokens = list(tokens)
+    terms = sanitize_filename(', '.join(tokens))
+    output_file = output_file.format(terms)
 
-    if not outputname:
-        terms = ', '.join(tokens)
-        outputname = sanitize_filename('Compilation of %s.mp4' % terms)
+    print('Directory:', directory, 'Output:', output_file, 'Match:', tokens)
 
     if is_regex:
         search_regxps = [regexp(m) for m in tokens]
     else:
         f = (re.I if case_sensitive == False else 0)
         search_regxps = [re.compile(r"\b"+m+r"\b", flags=f) for m in tokens]
-
 
 
     # find subtitles
@@ -92,6 +93,8 @@ def main(tokens, directory, outputname, dry_run, offsets, is_regex, case_sensiti
                     episode=episode,
                     caption=caption,
                     clip=None,
+                    clip_exported_file=None,
+                    cut: SimpleNamespace(t_start=0, t_end=0, t_total=0)
                 )
                 quotes.append(quote)
 
@@ -103,23 +106,36 @@ def main(tokens, directory, outputname, dry_run, offsets, is_regex, case_sensiti
     if len(quotes) > 0 and dry_run == False:
         # trim clips
         print('\n=> Creating subclips...')
-        clips = []
         for i, quote in enumerate(quotes):
 
-            t1 = time_to_seconds(quote.caption.start) + offsets[0]
-            t2 = time_to_seconds(quote.caption.end) + offsets[1]
-            print("\t[{}/{}] Clipping... ({:.2f}s) {}".format(i,
-                                                              len(quotes), t2-t1, quote.caption.text))
-            clip = VideoFileClip(quote.episode.video_path).subclip(t1, t2)
+            quote.cut.t_start = time_to_seconds(quote.caption.start) + offsets[0]
+            quote.cut.t_end = time_to_seconds(quote.caption.end) + offsets[1]
+            quote.cut.t_total = quote.cut.t_end - quote.cut.t_start
 
-            # outputfile = './clips/{} [{}] {}.mp4'.format(quote.count, quote.index, quote.basename)
-            # if path.exists(outputfile):
-            #     print("\tAlready Exist, skipping...")
-            #     continue
-            # clip.to_videofile(outputfile, codec="libx264", temp_audiofile='temp-audio.m4a', remove_temp=True, audio_codec='aac')
+            print("\t[{}/{}] Clipping... ({:.2f}s) {}".format(i, len(quotes), quote.cut.t_end-quote.cut.t_start, quote.caption.text))
+            clip = VideoFileClip(quote.episode.video_path).subclip(quote.cut.t_start, quote.cut.t_end)
 
-            clips.append(clip)
+            # export individual clips
+            if export_clips:
+                clip_filename = export_clips_template.format(
+                    n=i+1,
+                    index=quote.caption.index,
+                    basename=quote.episode.basename,
+                    quote=quote.caption.text,
+                    start=quote.caption.start,
+                    end=quote.caption.end,
+                    duration=quote.clip.duration,
+                )
+                quote.clip_exported_file = path.join(export_clips_dir, sanitize_filename(clip_filename))
+
+                if not path.isfile(quote.clip_exported_file):
+                    clip.to_videofile(quote.clip_exported_file, codec="libx264", temp_audiofile=quote.clip_exported_file + '~audio.m4a', remove_temp=True, audio_codec='aac')
+                else:
+                    print("\tAlready Exist, skipping...")
+            else:
+                # save for joining later
             quote.clip = clip
+
         print('  Done creating subclips!')
 
         # join clips into a single video
