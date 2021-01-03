@@ -94,7 +94,7 @@ def main(tokens, directory, output_file, dry_run, offsets, is_regex, case_sensit
                     caption=caption,
                     clip=None,
                     clip_exported_file=None,
-                    cut: SimpleNamespace(t_start=0, t_end=0, t_total=0)
+                    cut= SimpleNamespace(t_start=0, t_end=0, t_total=0),
                 )
                 quotes.append(quote)
 
@@ -124,7 +124,7 @@ def main(tokens, directory, output_file, dry_run, offsets, is_regex, case_sensit
                     quote=quote.caption.text,
                     start=quote.caption.start,
                     end=quote.caption.end,
-                    duration=quote.clip.duration,
+                    duration=clip.duration,
                 )
                 quote.clip_exported_file = path.join(export_clips_dir, sanitize_filename(clip_filename))
 
@@ -139,7 +139,7 @@ def main(tokens, directory, output_file, dry_run, offsets, is_regex, case_sensit
         print('  Done creating subclips!')
 
         # join clips into a single video
-        print('\n=> Rendering {} clips together...'.format(len(clips)))
+        print('\n=> Rendering {} clips together...'.format(len(quotes)))
 
         clips = []
         if export_clips:
@@ -165,9 +165,9 @@ def main(tokens, directory, output_file, dry_run, offsets, is_regex, case_sensit
         start = 0
         new_subtitles = []
         for i, quote in enumerate(quotes):
-            end = start + quote.clip.duration
-            line = SimpleNamespace(index=i+1, start=seconds_to_hhmmssms(start),
-                                   end=seconds_to_hhmmssms(end), text=quote.caption.text)
+            end = start + quote.cut.t_total
+            line = SimpleNamespace(index=i+1, start=seconds_to_hhmmssms(start-offsets[0]),
+                                   end=seconds_to_hhmmssms(end-offsets[1]), text=quote.caption.text)
             start = end
             new_subtitles.append(line)
 
