@@ -11,34 +11,40 @@ from pathvalidate import sanitize_filename
 
 
 @click.command()
-@click.argument('tokens', required=True, nargs=-1)
-@click.option('--directory', '-dir', '-d', type=click.Path(dir_okay=True), default=".", show_default=True, help="Directory to be scanned")
-@click.option('--output', '-o', 'outputname', type=click.Path(file_okay=True), help="Name of the output movie. [default: MATCHES.mp4]")
+@click.argument('directory', type=click.Path(dir_okay=True, exists=True, resolve_path=True), default=".")
+@click.option('--match', '-m', 'tokens', type=str, required=True, multiple=True)
+@click.option('--output', '-o', 'outputname', type=click.Path(file_okay=True, writable=True), help="Name of the output movie. [default: MATCHES.mp4]")
 @click.option('--dry-run/--no-dry-run', type=bool, is_flag=True, help="Skip the generation of clips")
 @click.option('--offset', '-t', 'offsets', type=(float, float), metavar='<start> <end>', default=[0.0, 0.0], show_default=True, help="Offset the start and end timestamps.\nFor example --offset -1.5 1.5 will make each clip 3s longer.")
 @click.option('--case-sensitive', '-c', 'case_sensitive', is_flag=True, help="Case sensitive match (ignored by --regex)")
 @click.option('--regex', '-re', 'is_regex', type=bool, is_flag=True, help="Interpret matches as regular expressions. Example '/foo \w+/i' ")
 def main(tokens, directory, outputname, dry_run, offsets, is_regex, case_sensitive):
     """A tool for finding quotes in series/movies/animes and automatically creating compilations.
-    
+
     \b
     Examples:
-    $ quoteclipper Ouch Damn
-    $ quoteclipper "Holy Cow" "Damn it"
-    $ quoteclipper -directory /Volumes/x/ -o ~/Desktop/greetings.mp4 Hello Hi Hey
-    $ quoteclipper -re /Call 555.\d+/i 
-    $ quoteclipper -re /Car?s|sandwich(es)?/i 
+    $ quoteclipper -match Hello .
+    $ quoteclipper -m "Morning" -m "Good Night" ./videos
+    $ quoteclipper -o ~/Desktop/greetings.mp4 -m 'Hello' -m 'Hi' -m 'Whassup' .
+    $ quoteclipper -re -m /Call 555.\d+/i 
+    $ quoteclipper -re -m /Car?s|sandwich(es)?/i .
     """
-    
     print('QuoteClipper')
-
-    tokens = list(tokens)
-    if outputname:
-        outputname = sanitize_filename(outputname)
-    else:
-        outputname = sanitize_filename(', '.join(tokens) + '.mp4')
-
     print('Directory:', directory, 'Matches:', tokens, 'Output:', outputname)
+    
+    tokens = list(tokens)
+
+    if not outputname:
+        terms = ', '.join(tokens)
+        outputname = sanitize_filename('Compilation of %s.mp4' % terms)
+
+    if is_regex:
+        search_regxps = [regexp(m) for m in tokens]
+    else:
+        f = (re.I if case_sensitive == False else 0)
+        search_regxps = [re.compile(r"\b"+m+r"\b", flags=f) for m in tokens]
+
+
 
     # find subtitles
     print('\n=> Scanning folder {} for videos with srt subtitles...'.format(directory))
@@ -74,11 +80,6 @@ def main(tokens, directory, outputname, dry_run, offsets, is_regex, case_sensiti
     # read each subtitle
     print('\n=> Searching captions matching "{}" ...'.format('" or "'.join(tokens)))
 
-    if is_regex:
-        tokens = [regexp(m) for m in tokens]
-    else:
-        tokens = [re.compile(r"\b"+m+r"\b", flags=(re.I if case_sensitive==False else 0)) for m in tokens]
-
     quotes = []
     for episode in episodes_list:
         print('\t* ', episode.basename)
@@ -86,7 +87,7 @@ def main(tokens, directory, outputname, dry_run, offsets, is_regex, case_sensiti
 
             sanitized_captions = caption.text.strip().encode("ascii", "ignore").decode()
 
-            if test_text(sanitized_captions, tokens):
+            if test_text(sanitized_captions, search_regxps):
                 quote = SimpleNamespace(
                     episode=episode,
                     caption=caption,
@@ -105,18 +106,18 @@ def main(tokens, directory, outputname, dry_run, offsets, is_regex, case_sensiti
         clips = []
         for i, quote in enumerate(quotes):
 
-            # outputfile = './clips/{} [{}] {}.mp4'.format(quote.count, quote.index, quote.basename)
-            # if path.exists(outputfile):
-            #     print("\tAlready Exist, skipping...")
-            #     continue
-
             t1 = time_to_seconds(quote.caption.start) + offsets[0]
             t2 = time_to_seconds(quote.caption.end) + offsets[1]
             print("\t[{}/{}] Clipping... ({:.2f}s) {}".format(i,
                                                               len(quotes), t2-t1, quote.caption.text))
             clip = VideoFileClip(quote.episode.video_path).subclip(t1, t2)
 
+            # outputfile = './clips/{} [{}] {}.mp4'.format(quote.count, quote.index, quote.basename)
+            # if path.exists(outputfile):
+            #     print("\tAlready Exist, skipping...")
+            #     continue
             # clip.to_videofile(outputfile, codec="libx264", temp_audiofile='temp-audio.m4a', remove_temp=True, audio_codec='aac')
+
             clips.append(clip)
             quote.clip = clip
         print('  Done creating subclips!')
@@ -128,7 +129,8 @@ def main(tokens, directory, outputname, dry_run, offsets, is_regex, case_sensiti
         # clips = [clip.crossfadein(fade_duration) for clip in clips]
 
         final_clip = concatenate_videoclips(clips)
-        final_clip.write_videofile(outputname, codec="libx264", temp_audiofile=outputname+'~audio.m4a', remove_temp=True, audio_codec='aac')
+        final_clip.write_videofile(
+            outputname, codec="libx264", temp_audiofile=outputname+'~audio.m4a', remove_temp=True, audio_codec='aac')
 
         # Generate new subtitles
         print('\n=> Creating new subtitles...')
@@ -136,10 +138,11 @@ def main(tokens, directory, outputname, dry_run, offsets, is_regex, case_sensiti
         new_subtitles = []
         for i, quote in enumerate(quotes):
             end = start + quote.clip.duration
-            line = SimpleNamespace(index=i+1, start=seconds_to_hhmmssms(start), end=seconds_to_hhmmssms(end), text=quote.caption.text)
+            line = SimpleNamespace(index=i+1, start=seconds_to_hhmmssms(start),
+                                   end=seconds_to_hhmmssms(end), text=quote.caption.text)
             start = end
             new_subtitles.append(line)
-        
+
         template = "{index}{eol}{start} --> {end}{prop}{eol}{text}{eol}"
         new_subtitles = [template.format(
             index=c.index,
@@ -158,15 +161,17 @@ def main(tokens, directory, outputname, dry_run, offsets, is_regex, case_sensiti
     print('\nFinished!')
 
 
-def test_text(string, tests):
-    for test in tests:
-        if test.search(string):
+def test_text(string, regex_list):
+    for regex in regex_list:
+        if regex.search(string):
             return True
     return False
+
 
 def time_to_seconds(time):
     s = time.second + (time.microsecond/1000000)
     return timedelta(hours=time.hour, minutes=time.minute, seconds=s).total_seconds()
+
 
 def seconds_to_hhmmssms(sec):
     d = timedelta(seconds=sec)
@@ -176,8 +181,9 @@ def seconds_to_hhmmssms(sec):
     msecs = d.microseconds / 1000
     return "%02d:%02d:%02d,%03d" % (hrs, mins, secs, msecs)
 
+
 def regexp(string):
-    m = re.match(r'^/(.*)/([imud]*)$', string)
+    m = re.match(r'^/(.*)/([aidlmsuxv]*)$', string, flags=re.DOTALL)
     if m:
         regex = m.group(1)
         f = m.group(2)
@@ -191,9 +197,12 @@ def regexp(string):
             (re.UNICODE if 'u' in f else 0) |
             (re.VERBOSE if 'x' in f or 'v' in f else 0)
         )
-        return re.compile(regex, flags=flags)
+        try:
+            return re.compile(regex, flags=flags)
+        except BaseException as err:
+            raise click.BadOptionUsage('tokens', f'Bad regular expression!\n{regex}\n{err}')
     else:
-        raise NameError('Invalid regular expression! /expression/flags')
+        raise click.BadOptionUsage('tokens', f'Not a Regexp value!\n{string}\nRegular expression should be /re/ delimited. (https://en.wikipedia.org/wiki/Regular_expression#Delimiters)')
 
 
 if __name__ == '__main__':
