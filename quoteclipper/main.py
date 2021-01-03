@@ -4,6 +4,7 @@ from os import path
 from os import walk
 from datetime import timedelta
 from types import SimpleNamespace
+from pysubparser import parser
 from moviepy.editor import VideoFileClip
 from moviepy.editor import *
 from pathvalidate import sanitize_filename
@@ -69,9 +70,9 @@ def main(matches, directory, outputname, dry_run, offsets, is_regex):
     quotes = []
     for episode in episodes_list:
         print('\t* ', episode.basename)
-        for caption in parse_str(episode.srt):
+        for caption in parser.parse(episode.subtitles_path):
 
-            sanitized_captions = '\n'.join(caption.content).strip().lower().encode("ascii", "ignore").decode()
+            sanitized_captions = caption.text.strip().lower().encode("ascii", "ignore").decode()
 
             if test_text(sanitized_captions, matches):
                 quote = SimpleNamespace(
@@ -81,7 +82,7 @@ def main(matches, directory, outputname, dry_run, offsets, is_regex):
                 )
                 quotes.append(quote)
 
-                print('\t\t{} - [{} {} ~ {}] {}'.format(len(quotes), caption.index, caption.start, caption.end, ' | '.join(caption.content)))
+                print('\t\t{} - [{} {} ~ {}] {}'.format(len(quotes), caption.index, caption.start, caption.end, caption.text))
         print('\t')
     print('  Done scanning subtitles! Quotes found: {}'.format(len(quotes)))
 
@@ -119,45 +120,6 @@ def main(matches, directory, outputname, dry_run, offsets, is_regex):
 
     print('\nFinished!')
            
-
-def parse_str(filename):
-    with open(filename, mode='r', encoding='utf-8-sig') as file:
-        line_number = 0
-        while True:
-            
-            index = 0
-            timestamps = []
-            content = []
-
-            line_number += 1
-            line = file.readline()
-            if line.rstrip().isnumeric():
-                index = int(line.rstrip())
-
-                # read timestamp
-                line_number += 1
-                line = file.readline().rstrip()
-                timestamps = line.split(" --> ")
-
-                while True:
-                    line_number += 1
-                    line = file.readline().rstrip()
-                    if line != "":
-                        content.append(line)
-                    else:
-                        break
-
-                yield SimpleNamespace(index=index, start=timestamps[0], end=timestamps[1], content=content)
-                
-            elif not line:
-                # End of file
-                break
-            elif line.strip() == "":
-                # Break line
-                pass
-            else:
-                print('ERROR Reading line ({}:{})  "{}"'.format(filename, line_number, line))
-                # raise NameError("Unexpected line content! ")
 
 def test_text(string, tests):
     for test in tests:

@@ -9,6 +9,7 @@ setup(
     install_requires=[
         'click',
         'pathvalidate',
+        'pysub-parser',
         'moviepy',
     ],
     entry_points = {
