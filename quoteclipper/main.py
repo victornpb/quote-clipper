@@ -9,14 +9,14 @@ from moviepy.editor import VideoFileClip
 from moviepy.editor import *
 from pathvalidate import sanitize_filename
 
+
 @click.command()
 @click.argument('matches', required=True, nargs=-1)
-@click.option('--directory','-dir','-d', type=click.Path(dir_okay=True), default=".", show_default=True, help="Directory to be scanned")
-@click.option('--output','-o', 'outputname', type=click.Path(file_okay=True), help="Name of the output movie. [default: MATCHES.mp4]")
+@click.option('--directory', '-dir', '-d', type=click.Path(dir_okay=True), default=".", show_default=True, help="Directory to be scanned")
+@click.option('--output', '-o', 'outputname', type=click.Path(file_okay=True), help="Name of the output movie. [default: MATCHES.mp4]")
 @click.option('--dry-run/--no-dry-run', type=bool, is_flag=True, help="Skip the generation of clips")
 @click.option('--offset', '-t', 'offsets', type=(float, float), metavar='<start> <end>', default=[0.0, 0.0], show_default=True, help="Offset the start and end timestamps.\nFor example --offset -1.5 1.5 will make each clip 3s longer.")
-@click.option('--regex','-re', 'is_regex', type=bool, is_flag=True, help="Interpret matches as regular expressions")
-
+@click.option('--regex', '-re', 'is_regex', type=bool, is_flag=True, help="Interpret matches as regular expressions")
 def main(matches, directory, outputname, dry_run, offsets, is_regex):
     print('QuoteClipper')
 
@@ -26,10 +26,10 @@ def main(matches, directory, outputname, dry_run, offsets, is_regex):
     else:
         outputname = sanitize_filename(', '.join(matches) + '.mp4')
 
-    print('Directory:',directory, 'Matches:',matches, 'Output:',outputname);
+    print('Directory:', directory, 'Matches:', matches, 'Output:', outputname)
 
     # find subtitles
-    print('\n=> Scanning folder {} for videos with srt subtitles...'.format(directory));
+    print('\n=> Scanning folder {} for videos with srt subtitles...'.format(directory))
     episodes_list = []
     for (dirpath, _dirnames, filenames) in walk(directory):
         for filename in filenames:
@@ -44,7 +44,7 @@ def main(matches, directory, outputname, dry_run, offsets, is_regex):
                     if path.isfile(test):
                         subtitles_path = test
                         break
-                
+
                 if subtitles_path:
                     episode = SimpleNamespace(
                         basename=basename,
@@ -52,13 +52,12 @@ def main(matches, directory, outputname, dry_run, offsets, is_regex):
                         subtitles_path=subtitles_path,
                     )
                     episodes_list.append(episode)
-                    print("\t* {}".format(subtitles_path));
+                    print("\t* {}".format(subtitles_path))
                 else:
                     print("\tNo subtitles found! {}".format(video_path))
 
     episodes_list = sorted(episodes_list, key=lambda k: k.basename)
     print("  Files found: {} videos with subtitles".format(len(episodes_list)))
-
 
     # read each subtitle
     print('\n=> Searching captions matching "{}" ...'.format('" or "'.join(matches)))
@@ -83,17 +82,17 @@ def main(matches, directory, outputname, dry_run, offsets, is_regex):
                 )
                 quotes.append(quote)
 
-                print('\t\t{} - [{} {} ~ {}] {}'.format(len(quotes), caption.index, caption.start, caption.end, caption.text))
+                print('\t\t{} - [{} {} ~ {}] {}'.format(len(quotes),
+                                                        caption.index, caption.start, caption.end, caption.text))
         print('\t')
     print('  Done scanning subtitles! Quotes found: {}'.format(len(quotes)))
 
-
-    if len(quotes) > 0 and dry_run==False:
+    if len(quotes) > 0 and dry_run == False:
         # trim clips
         print('\n=> Creating subclips...')
         clips = []
         for i, quote in enumerate(quotes):
-            
+
             # outputfile = './clips/{} [{}] {}.mp4'.format(quote.count, quote.index, quote.basename)
             # if path.exists(outputfile):
             #     print("\tAlready Exist, skipping...")
@@ -101,13 +100,13 @@ def main(matches, directory, outputname, dry_run, offsets, is_regex):
 
             t1 = time_to_seconds(quote.caption.start) + offsets[0]
             t2 = time_to_seconds(quote.caption.end) + offsets[1]
-            print("\t[{}/{}] Clipping... ({:.2f}s) {}".format(i, len(quotes), t2-t1, quote.caption.text))
+            print("\t[{}/{}] Clipping... ({:.2f}s) {}".format(i,
+                                                              len(quotes), t2-t1, quote.caption.text))
             clip = VideoFileClip(quote.episode.video_path).subclip(t1, t2)
 
             # clip.to_videofile(outputfile, codec="libx264", temp_audiofile='temp-audio.m4a', remove_temp=True, audio_codec='aac')
             clips.append(clip)
         print('  Done creating subclips!')
-
 
         # join clips into a single video
         print('\n=> Rendering {} clips together...'.format(len(clips)))
@@ -116,17 +115,18 @@ def main(matches, directory, outputname, dry_run, offsets, is_regex):
         # clips = [clip.crossfadein(fade_duration) for clip in clips]
 
         final_clip = concatenate_videoclips(clips)
-        final_clip.write_videofile(outputname, codec="libx264", temp_audiofile=outputname+'~audio.m4a', remove_temp=True, audio_codec='aac')
-
+        final_clip.write_videofile(
+            outputname, codec="libx264", temp_audiofile=outputname+'~audio.m4a', remove_temp=True, audio_codec='aac')
 
     print('\nFinished!')
-           
+
 
 def test_text(string, tests):
     for test in tests:
         if test.search(string):
             return True
     return False
+
 
 def time_to_seconds(time):
     s = time.second + (time.microsecond/1000000)
