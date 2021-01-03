@@ -107,7 +107,7 @@ def main(tokens, directory, output_file, dry_run, offsets, is_regex, case_sensit
         # trim clips
         print('\n=> Creating subclips...')
         for i, quote in enumerate(quotes):
-
+            
             quote.cut.t_start = time_to_seconds(quote.caption.start) + offsets[0]
             quote.cut.t_end = time_to_seconds(quote.caption.end) + offsets[1]
             quote.cut.t_total = quote.cut.t_end - quote.cut.t_start
@@ -134,19 +134,31 @@ def main(tokens, directory, output_file, dry_run, offsets, is_regex, case_sensit
                     print("\tAlready Exist, skipping...")
             else:
                 # save for joining later
-            quote.clip = clip
+                quote.clip = clip
 
         print('  Done creating subclips!')
 
         # join clips into a single video
         print('\n=> Rendering {} clips together...'.format(len(clips)))
 
-        # fade_duration = 1 # 1-second fade-in for each clip
-        # clips = [clip.crossfadein(fade_duration) for clip in clips]
-
+        clips = []
+        if export_clips:
+            # Read from exported clips files
+            for quote in quotes:
+                clip = VideoFileClip(quote.clip_exported_file)
+                clips.append(clip)
+        else:
+            # Export directly from source files
+            clips = list(map(lambda q: q.clip, quotes))
+        
         final_clip = concatenate_videoclips(clips)
         final_clip.write_videofile(
-            outputname, codec="libx264", temp_audiofile=outputname+'~audio.m4a', remove_temp=True, audio_codec='aac')
+            output_file,
+            codec="libx264",
+            temp_audiofile=output_file + '~audio.m4a',
+            remove_temp=True,
+            audio_codec='aac'
+            )
 
         # Generate new subtitles
         print('\n=> Creating new subtitles...')
@@ -170,7 +182,7 @@ def main(tokens, directory, output_file, dry_run, offsets, is_regex, case_sensit
         ) for c in new_subtitles]
         new_srt = '\n'.join(new_subtitles)
 
-        with open(path.splitext(outputname)[0] + '.srt', 'wb') as file:
+        with open(path.splitext(output_file)[0] + '.srt', 'wb') as file:
             file.write(new_srt.encode('utf8'))
         print('  Done creating new subtitles!')
 
