@@ -118,6 +118,7 @@ def main(tokens, directory, outputname, dry_run, offsets, is_regex, case_sensiti
 
             # clip.to_videofile(outputfile, codec="libx264", temp_audiofile='temp-audio.m4a', remove_temp=True, audio_codec='aac')
             clips.append(clip)
+            quote.clip = clip
         print('  Done creating subclips!')
 
         # join clips into a single video
@@ -127,8 +128,32 @@ def main(tokens, directory, outputname, dry_run, offsets, is_regex, case_sensiti
         # clips = [clip.crossfadein(fade_duration) for clip in clips]
 
         final_clip = concatenate_videoclips(clips)
-        final_clip.write_videofile(
-            outputname, codec="libx264", temp_audiofile=outputname+'~audio.m4a', remove_temp=True, audio_codec='aac')
+        final_clip.write_videofile(outputname, codec="libx264", temp_audiofile=outputname+'~audio.m4a', remove_temp=True, audio_codec='aac')
+
+        # Generate new subtitles
+        print('\n=> Creating new subtitles...')
+        start = 0
+        new_subtitles = []
+        for i, quote in enumerate(quotes):
+            end = start + quote.clip.duration
+            line = SimpleNamespace(index=i+1, start=seconds_to_hhmmssms(start), end=seconds_to_hhmmssms(end), text=quote.caption.text)
+            start = end
+            new_subtitles.append(line)
+        
+        template = "{index}{eol}{start} --> {end}{prop}{eol}{text}{eol}"
+        new_subtitles = [template.format(
+            index=c.index,
+            start=c.start,
+            end=c.end,
+            prop='',
+            text=c.text,
+            eol='\n',
+        ) for c in new_subtitles]
+        new_srt = '\n'.join(new_subtitles)
+
+        with open(path.splitext(outputname)[0] + '.srt', 'wb') as file:
+            file.write(new_srt.encode('utf8'))
+        print('  Done creating new subtitles!')
 
     print('\nFinished!')
 
@@ -139,10 +164,17 @@ def test_text(string, tests):
             return True
     return False
 
-
 def time_to_seconds(time):
     s = time.second + (time.microsecond/1000000)
     return timedelta(hours=time.hour, minutes=time.minute, seconds=s).total_seconds()
+
+def seconds_to_hhmmssms(sec):
+    d = timedelta(seconds=sec)
+    hrs, secs_remainder = divmod(d.seconds, 3600)
+    hrs += d.days * 24
+    mins, secs = divmod(secs_remainder, 60)
+    msecs = d.microseconds / 1000
+    return "%02d:%02d:%02d,%03d" % (hrs, mins, secs, msecs)
 
 def regexp(string):
     m = re.match(r'^/(.*)/([imud]*)$', string)
