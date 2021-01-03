@@ -7,11 +7,13 @@ setup(
     packages=find_packages(),
     include_package_data=True,
     install_requires=[
+        'click',
+        'pathvalidate',
         'moviepy',
     ],
     entry_points = {
         "console_scripts": [
-            "quoteclipper = scripts.__main__:main",
+            "quoteclipper = quoteclipper.main:main",
         ]
     }
 )
