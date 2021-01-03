@@ -11,22 +11,34 @@ from pathvalidate import sanitize_filename
 
 
 @click.command()
-@click.argument('matches', required=True, nargs=-1)
+@click.argument('tokens', required=True, nargs=-1)
 @click.option('--directory', '-dir', '-d', type=click.Path(dir_okay=True), default=".", show_default=True, help="Directory to be scanned")
 @click.option('--output', '-o', 'outputname', type=click.Path(file_okay=True), help="Name of the output movie. [default: MATCHES.mp4]")
 @click.option('--dry-run/--no-dry-run', type=bool, is_flag=True, help="Skip the generation of clips")
 @click.option('--offset', '-t', 'offsets', type=(float, float), metavar='<start> <end>', default=[0.0, 0.0], show_default=True, help="Offset the start and end timestamps.\nFor example --offset -1.5 1.5 will make each clip 3s longer.")
-@click.option('--regex', '-re', 'is_regex', type=bool, is_flag=True, help="Interpret matches as regular expressions")
-def main(matches, directory, outputname, dry_run, offsets, is_regex):
+@click.option('--case-sensitive', '-c', 'case_sensitive', is_flag=True, help="Case sensitive match (ignored by --regex)")
+@click.option('--regex', '-re', 'is_regex', type=bool, is_flag=True, help="Interpret matches as regular expressions. Example '/foo \w+/i' ")
+def main(tokens, directory, outputname, dry_run, offsets, is_regex, case_sensitive):
+    """A tool for finding quotes in series/movies/animes and automatically creating compilations.
+    
+    \b
+    Examples:
+    $ quoteclipper Ouch Damn
+    $ quoteclipper "Holy Cow" "Damn it"
+    $ quoteclipper -directory /Volumes/x/ -o ~/Desktop/greetings.mp4 Hello Hi Hey
+    $ quoteclipper -re /Call 555.\d+/i 
+    $ quoteclipper -re /Car?s|sandwich(es)?/i 
+    """
+    
     print('QuoteClipper')
 
-    matches = list(matches)
+    tokens = list(tokens)
     if outputname:
         outputname = sanitize_filename(outputname)
     else:
-        outputname = sanitize_filename(', '.join(matches) + '.mp4')
+        outputname = sanitize_filename(', '.join(tokens) + '.mp4')
 
-    print('Directory:', directory, 'Matches:', matches, 'Output:', outputname)
+    print('Directory:', directory, 'Matches:', tokens, 'Output:', outputname)
 
     # find subtitles
     print('\n=> Scanning folder {} for videos with srt subtitles...'.format(directory))
@@ -60,21 +72,21 @@ def main(matches, directory, outputname, dry_run, offsets, is_regex):
     print("  Files found: {} videos with subtitles".format(len(episodes_list)))
 
     # read each subtitle
-    print('\n=> Searching captions matching "{}" ...'.format('" or "'.join(matches)))
+    print('\n=> Searching captions matching "{}" ...'.format('" or "'.join(tokens)))
 
     if is_regex:
-        matches = [re.compile(m, flags=re.I) for m in matches]
+        tokens = [regexp(m) for m in tokens]
     else:
-        matches = [re.compile(r"\b"+m+r"\b", flags=re.I) for m in matches]
+        tokens = [re.compile(r"\b"+m+r"\b", flags=(re.I if case_sensitive==False else 0)) for m in tokens]
 
     quotes = []
     for episode in episodes_list:
         print('\t* ', episode.basename)
         for caption in parser.parse(episode.subtitles_path):
 
-            sanitized_captions = caption.text.strip().lower().encode("ascii", "ignore").decode()
+            sanitized_captions = caption.text.strip().encode("ascii", "ignore").decode()
 
-            if test_text(sanitized_captions, matches):
+            if test_text(sanitized_captions, tokens):
                 quote = SimpleNamespace(
                     episode=episode,
                     caption=caption,
@@ -131,6 +143,25 @@ def test_text(string, tests):
 def time_to_seconds(time):
     s = time.second + (time.microsecond/1000000)
     return timedelta(hours=time.hour, minutes=time.minute, seconds=s).total_seconds()
+
+def regexp(string):
+    m = re.match(r'^/(.*)/([imud]*)$', string)
+    if m:
+        regex = m.group(1)
+        f = m.group(2)
+        flags = (
+            (re.ASCII if 'a' in f else 0) |
+            (re.IGNORECASE if 'i' in f else 0) |
+            (re.DEBUG if 'd' in f else 0) |
+            (re.LOCALE if 'l' in f else 0) |
+            (re.MULTILINE if 'm' in f else 0) |
+            (re.DOTALL if 's' in f else 0) |
+            (re.UNICODE if 'u' in f else 0) |
+            (re.VERBOSE if 'x' in f or 'v' in f else 0)
+        )
+        return re.compile(regex, flags=flags)
+    else:
+        raise NameError('Invalid regular expression! /expression/flags')
 
 
 if __name__ == '__main__':
