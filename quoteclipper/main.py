@@ -98,10 +98,10 @@ def main(matches, directory, outputname, dry_run, offsets, is_regex):
             #     print("\tAlready Exist, skipping...")
             #     continue
 
-            t1 = timestamp_to_sec(quote.caption.start) + offsets[0]
-            t2 = timestamp_to_sec(quote.caption.end) + offsets[1]
-            print("\t[{}/{}] Clipping... ({:.2f}s) {}".format(i, len(quotes), t2-t1, " | ".join(quote.caption.content)))
-            clip = VideoFileClip(quote.episode.video).subclip(t1, t2)
+            t1 = time_to_seconds(quote.caption.start) + offsets[0]
+            t2 = time_to_seconds(quote.caption.end) + offsets[1]
+            print("\t[{}/{}] Clipping... ({:.2f}s) {}".format(i, len(quotes), t2-t1, quote.caption.text))
+            clip = VideoFileClip(quote.episode.video_path).subclip(t1, t2)
 
             # clip.to_videofile(outputfile, codec="libx264", temp_audiofile='temp-audio.m4a', remove_temp=True, audio_codec='aac')
             clips.append(clip)
@@ -127,10 +127,9 @@ def test_text(string, tests):
             return True
     return False
 
-def timestamp_to_sec(timestamp):
-    timestamp = timestamp.replace(',', '.')
-    h, m, s = map(float, timestamp.split(':'))
-    return float(timedelta(hours=h, minutes=m, seconds=s).total_seconds())
+def time_to_seconds(time):
+    s = time.second + (time.microsecond/1000000)
+    return timedelta(hours=time.hour, minutes=time.minute, seconds=s).total_seconds()
 
 
 if __name__ == '__main__':
