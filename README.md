@@ -1,4 +1,7 @@
 # Quote Clipper
+
+![quote-clipper](https://user-images.githubusercontent.com/3372598/175794893-c98b9be2-4f8b-4969-88a4-dd43b2af97d9.jpg)
+
 A CLI Tool for finding quotes in series/movies/animes and automatically creating video compilations.
 
 # Usage
